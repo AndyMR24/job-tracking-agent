@@ -10,7 +10,7 @@ Use Python 3.11 or later. From this directory, run `python -m pip install -e .`,
 
 ## Discovering jobs
 
-For a public web search, use `job-agent search "junior Python developer Germany"`. This only sends the public query to DuckDuckGo; it sends no profile, CV, or contact information. Search result pages commonly lack detailed requirements, so review them before treating them as complete listings.
+For an automated public web search, use `job-agent search "junior Python developer"` or add a location with `--location Köln`. This uses Adzuna and sends only the public query/location plus locally loaded API credentials; it sends no profile, CV, or contact information. Adzuna search descriptions are snippets, so review results before treating them as complete listings.
 
 For reliable, detailed ingestion, create a JSON array and run `job-agent ingest jobs.json`. Each item needs `title`; it may contain `company`, `location`, `arrangement` (`remote`, `hybrid`, `onsite`, or `unknown`), `description`, `source`, `source_url`, `external_job_id`, and `requirements`. Requirements are objects such as `{"text":"Python","kind":"mandatory"}`. Missing information stays unknown.
 
@@ -30,5 +30,6 @@ The user applies manually. Track manual progress with `job-agent application JOB
 
 The default SQLite database is `data/job_agent.sqlite3`. It contains public job records, decisions, application notes, local CV-version metadata, and audit records. It intentionally contains no passwords and no facility for external personal-data transmission. `job-agent permission-check ACTION DESTINATION DATA --approve` can record a one-time, named approval locally for a future integration, but does not transmit data itself; it always blocks `submit_application`. Delete or move the database yourself if you want a fresh history.
 
-If `validate` fails, correct the reported JSON field. If a search fails, check network access or use `ingest` with saved public job data. Run tests with `python -m unittest discover -s tests`.
+If `validate` fails, correct the reported JSON field. If an Adzuna search fails, check that `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are available in the local `.env` file or environment, then use `ingest` with saved public job data. The search source does not follow Adzuna redirect URLs. Run tests with `python -m unittest discover -s tests`.
+
 

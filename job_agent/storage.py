@@ -58,7 +58,7 @@ class Store:
 
     def list_jobs(self, include_rejected: bool = True) -> list[sqlite3.Row]:
         sql = "SELECT j.*,e.payload evaluation FROM jobs j LEFT JOIN evaluations e ON j.id=e.job_id"
-        if not include_rejected: sql += " WHERE j.status != 'rejected_by_user'"
+        if not include_rejected: sql += " WHERE j.status != 'rejected_by_user' AND COALESCE(json_extract(e.payload,'$.excluded'),0) != 1"
         return self.connection.execute(sql + " ORDER BY json_extract(e.payload,'$.score') DESC, j.last_seen_at DESC").fetchall()
 
     def set_decision(self, job_id: int, decision: str, reason: str | None = None) -> None:
@@ -78,3 +78,4 @@ class Store:
     def save_cv(self, job_id: int, path: str, facts: list[str]) -> None:
         self._ensure_job_exists(job_id)
         self.connection.execute("INSERT INTO cv_versions(job_id,path,source_facts,created_at) VALUES(?,?,?,?)", (job_id,path,json.dumps(facts),now())); self.connection.commit(); self.audit("cv_generated",job_id)
+

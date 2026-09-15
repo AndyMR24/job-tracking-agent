@@ -1,6 +1,7 @@
 """Explainable, deliberately conservative job-fit evaluation."""
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 
 from .models import Job
@@ -52,7 +53,7 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
         gaps.append("Title is not clearly among the configured target roles.")
     seniority = job.seniority
     if seniority == "unknown":
-        seniority = next((level for level in ("intern", "trainee", "graduate", "entry", "junior", "associate", "senior", "lead", "principal", "staff") if level in title), "unknown")
+        seniority = next((level for level in ("intern", "trainee", "graduate", "entry", "junior", "associate", "senior", "lead", "principal", "staff") if re.search(rf"\b{re.escape(level)}\b", title)), "unknown")
     if seniority in {"senior", "lead", "principal", "staff"}:
         score -= 45; excluded = True; concerns.append("The posting is explicitly senior-level while the profile has no professional employment experience.")
     elif seniority in {"junior", "graduate", "entry", "trainee", "intern", "associate"}:
@@ -78,6 +79,12 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
             score -= 4; gaps.append(f"Preferred/useful requirement not confirmed: {requirement.text}.")
         else:
             unknown.append(f"Requirement needs review: {requirement.text}.")
+    if job.metadata.get("description_is_snippet"):
+        score -= 5
+        unknown.append("The source provides only a description snippet; additional requirements may be unavailable.")
+    elif not job.requirements:
+        score -= 5
+        unknown.append("The listing does not expose explicit requirements; technical qualifications could not be fully verified.")
     if job.arrangement == "remote":
         score += 6; matches.append("Germany-wide remote work is enabled in the configuration.")
     elif job.arrangement in {"hybrid", "onsite"}:
@@ -96,3 +103,8 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
     score = max(0, min(100, score))
     assessment = "rejected" if excluded else "recommended" if score >= 60 else "borderline"
     return Evaluation(score, assessment, excluded, matches, gaps, concerns, unknown)
+
+
+
+
+

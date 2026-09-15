@@ -4,12 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
+from .adzuna import AdzunaError, AdzunaSource
 from .cv import generate
 from .evaluator import evaluate
 from .normalizer import normalize
 from .permissions import require_external_approval
 from .profile import ValidationError, load_config, load_profile
-from .search import SearchProviderChallengeError, public_search
 from .storage import Store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,7 +31,7 @@ def main(argv=None):
     subs = parser.add_subparsers(dest="command", required=True)
     subs.add_parser("validate")
     ingest = subs.add_parser("ingest"); ingest.add_argument("file", help="JSON list of public job records")
-    search = subs.add_parser("search"); search.add_argument("query", nargs="?", help="Public web query; no personal data is transmitted")
+    search = subs.add_parser("search"); search.add_argument("query", nargs="?", help="Public Adzuna query; no personal data is transmitted"); search.add_argument("--location", help="Optional Adzuna location filter")
     listing = subs.add_parser("list"); listing.add_argument("--include-rejected", action="store_true")
     view = subs.add_parser("view"); view.add_argument("job_id", type=int)
     for name in ("save", "reject"):
@@ -53,11 +53,11 @@ def main(argv=None):
             if args.command == "ingest": raw_jobs = json.loads(Path(args.file).read_text(encoding="utf-8"))
             else:
                 query = args.query or " ".join(config["search_terms"]); store.audit("search_started")
-                raw_jobs = public_search(query); store.audit("search_completed", details=f"{len(raw_jobs)} public results")
+                raw_jobs = AdzunaSource(ROOT / ".env").search(query, args.location); store.audit("search_completed", details=f"{len(raw_jobs)} public results")
             if args.command == "search" and not raw_jobs:
                 print("No jobs found.")
             for raw in raw_jobs:
-                raw.setdefault("known_requirement_terms", [s["name"] for s in profile.data["skills"]]); job = normalize(raw); result = evaluate(job, profile, config); job_id, created = store.save_job(job, result.to_dict()); print(f"{'New' if created else 'Known'} job {job_id}: {job.title} ({result.score}/100)")
+                raw.setdefault("known_requirement_terms", [s["name"] for s in profile.data["skills"]]); job = normalize(raw); result = evaluate(job, profile, config); job_id, created = store.save_job(job, result.to_dict()); label = "Excluded" if result.excluded else ("New" if created else "Known"); print(f"{label} job {job_id}: {job.title} ({result.score}/100)")
         elif args.command == "list":
             for row in store.list_jobs(args.include_rejected): print(f"{row['id']:>3}  {json.loads(row['evaluation'])['score']:>3}/100  {row['status']:<18} {json.loads(row['payload'])['title']}")
         elif args.command == "view":
@@ -73,9 +73,10 @@ def main(argv=None):
             store.audit("external_action_approved", details=json.dumps(approval)); print("Specific approval recorded locally. No data was transmitted.")
         elif args.command == "tailor":
             job, _, _ = store.get_job(args.job_id); output = args.output or str(ROOT / "output" / f"cv_job_{args.job_id}.md"); path, facts = generate(job, profile, output); store.save_cv(args.job_id, str(path), facts); print(f"Local truthful CV draft created: {path}")
-    except SearchProviderChallengeError:
-        print("Search provider returned a challenge/block instead of search results.")
+    except AdzunaError as exc:
+        parser.error(str(exc))
     except (ValidationError, ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
 
 if __name__ == "__main__": main()
+

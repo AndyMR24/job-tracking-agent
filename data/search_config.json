@@ -4,6 +4,7 @@
   "work_arrangements": ["remote", "hybrid", "onsite"],
   "maximum_commute_note": "Roughly up to two hours by train for hybrid or onsite roles; verify individual journeys.",
   "master_cv_path": "SOURCE_CV.pdf",
-  "search_terms": ["junior Python developer Germany", "entry level data analyst Germany", "graduate data scientist Germany"]
+  "search_terms": ["junior Python developer", "entry level data analyst", "graduate data scientist"]
 }
+
 
