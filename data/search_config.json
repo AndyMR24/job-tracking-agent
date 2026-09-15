@@ -1,0 +1,8 @@
+{
+  "target_roles": ["Data Scientist", "Data Analyst", "Machine Learning Engineer", "Python Developer", "Software Developer", "AI/ML"],
+  "locations": ["Aachen", "Cologne", "Köln", "Düsseldorf", "Duesseldorf"],
+  "work_arrangements": ["remote", "hybrid", "onsite"],
+  "maximum_commute_note": "Roughly up to two hours by train for hybrid or onsite roles; verify individual journeys.",
+  "master_cv_path": "SOURCE_CV.pdf.pdf",
+  "search_terms": ["junior Python developer Germany", "entry level data analyst Germany", "graduate data scientist Germany"]
+}
