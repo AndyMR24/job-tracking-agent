@@ -7,6 +7,22 @@ from .models import Job
 from .profile import Profile
 
 
+def _matches_target_role(title: str, roles: list[str]) -> bool:
+    """Recognize small, explicit title variants without matching generic words."""
+    normalized = " ".join(title.lower().replace("/", " ").split())
+    for role in roles:
+        target = " ".join(role.lower().replace("/", " ").split())
+        if target in normalized:
+            return True
+        if target == "data scientist" and "data science" in normalized:
+            return True
+        if target == "python developer" and "python" in normalized and "developer" in normalized:
+            return True
+        if target == "software developer" and "software" in normalized and "developer" in normalized:
+            return True
+    return False
+
+
 @dataclass
 class Evaluation:
     score: int
@@ -30,7 +46,7 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
     excluded = False
     title = job.title.lower()
     roles = [x.lower() for x in config["target_roles"]]
-    if any(role in title or any(word in title for word in role.split()) for role in roles):
+    if _matches_target_role(title, roles):
         score += 15; matches.append("Title is related to a configured target role.")
     else:
         gaps.append("Title is not clearly among the configured target roles.")
@@ -74,8 +90,9 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
     else:
         unknown.append("Work arrangement is unknown.")
     body = " ".join(filter(None, [job.description, job.qualifications])).lower()
-    if "must be authorized to work" in body or "no sponsorship" in body:
-        unknown.append("Work-authorization wording requires verification; no legal conclusion is made.")
+    sponsorship_terms = ("must be authorized to work", "no sponsorship", "visa sponsorship", "requires sponsorship", "sponsorship is unavailable", "sponsorship unavailable")
+    if any(term in body for term in sponsorship_terms):
+        unknown.append("Work-authorization or sponsorship wording requires verification; no legal conclusion is made.")
     score = max(0, min(100, score))
     assessment = "rejected" if excluded else "recommended" if score >= 60 else "borderline"
     return Evaluation(score, assessment, excluded, matches, gaps, concerns, unknown)

@@ -34,6 +34,10 @@ class Store:
     def audit(self, event: str, job_id: int | None = None, details: str | None = None) -> None:
         self.connection.execute("INSERT INTO audit_events(event,job_id,details,created_at) VALUES (?,?,?,?)", (event, job_id, details, now())); self.connection.commit()
 
+    def _ensure_job_exists(self, job_id: int) -> None:
+        if not self.connection.execute("SELECT 1 FROM jobs WHERE id=?", (job_id,)).fetchone():
+            raise KeyError(f"Job {job_id} was not found.")
+
     def save_job(self, job: Job, evaluation: dict) -> tuple[int, bool]:
         stamp = now(); payload = json.dumps(job.to_dict())
         existing = None
@@ -60,14 +64,17 @@ class Store:
     def set_decision(self, job_id: int, decision: str, reason: str | None = None) -> None:
         status = {"save": "saved", "reject": "rejected_by_user"}.get(decision)
         if not status: raise ValueError("Decision must be save or reject.")
+        self._ensure_job_exists(job_id)
         self.connection.execute("UPDATE jobs SET status=?,rejection_reason=? WHERE id=?", (status, reason, job_id)); self.connection.commit(); self.audit(f"job_{decision}d", job_id, reason)
 
     def update_application(self, job_id: int, status: str, application_date: str | None, notes: str | None) -> None:
         if status not in STATUSES - {"discovered", "saved", "rejected_by_user"}: raise ValueError(f"Invalid application status: {status}")
+        self._ensure_job_exists(job_id)
         self.connection.execute("INSERT INTO applications(job_id,status,application_date,notes,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET status=excluded.status,application_date=COALESCE(excluded.application_date,applications.application_date),notes=COALESCE(excluded.notes,applications.notes),updated_at=excluded.updated_at", (job_id,status,application_date,notes,now()))
         self.connection.execute("UPDATE jobs SET status=? WHERE id=?", (status,job_id)); self.connection.commit(); self.audit("application_status_changed", job_id, status)
 
     def applications(self): return self.connection.execute("SELECT a.*,j.payload FROM applications a JOIN jobs j ON j.id=a.job_id ORDER BY a.updated_at DESC").fetchall()
     def history(self): return self.connection.execute("SELECT * FROM audit_events ORDER BY id DESC").fetchall()
     def save_cv(self, job_id: int, path: str, facts: list[str]) -> None:
+        self._ensure_job_exists(job_id)
         self.connection.execute("INSERT INTO cv_versions(job_id,path,source_facts,created_at) VALUES(?,?,?,?)", (job_id,path,json.dumps(facts),now())); self.connection.commit(); self.audit("cv_generated",job_id)

@@ -7,9 +7,9 @@ from pathlib import Path
 from .cv import generate
 from .evaluator import evaluate
 from .normalizer import normalize
-from .permissions import PermissionDenied, require_external_approval
+from .permissions import require_external_approval
 from .profile import ValidationError, load_config, load_profile
-from .search import public_search
+from .search import SearchProviderChallengeError, public_search
 from .storage import Store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,11 +54,12 @@ def main(argv=None):
             else:
                 query = args.query or " ".join(config["search_terms"]); store.audit("search_started")
                 raw_jobs = public_search(query); store.audit("search_completed", details=f"{len(raw_jobs)} public results")
+            if args.command == "search" and not raw_jobs:
+                print("No jobs found.")
             for raw in raw_jobs:
                 raw.setdefault("known_requirement_terms", [s["name"] for s in profile.data["skills"]]); job = normalize(raw); result = evaluate(job, profile, config); job_id, created = store.save_job(job, result.to_dict()); print(f"{'New' if created else 'Known'} job {job_id}: {job.title} ({result.score}/100)")
         elif args.command == "list":
-            for row in store.list_jobs(args.include_rejected):
-                print(f"{row['id']:>3}  {json.loads(row['evaluation'])['score']:>3}/100  {row['status']:<18} {json.loads(row['payload'])['title']}")
+            for row in store.list_jobs(args.include_rejected): print(f"{row['id']:>3}  {json.loads(row['evaluation'])['score']:>3}/100  {row['status']:<18} {json.loads(row['payload'])['title']}")
         elif args.command == "view":
             job, ev, row = store.get_job(args.job_id); print(f"{job.title}\nCompany: {job.company or 'unknown'}\nLocation: {job.location or 'unknown'}\nURL: {job.source_url or 'unknown'}\n"); print_evaluation(ev)
         elif args.command in {"save", "reject"}: store.set_decision(args.job_id, args.command, args.reason); print(f"Job {args.job_id} updated.")
@@ -72,6 +73,8 @@ def main(argv=None):
             store.audit("external_action_approved", details=json.dumps(approval)); print("Specific approval recorded locally. No data was transmitted.")
         elif args.command == "tailor":
             job, _, _ = store.get_job(args.job_id); output = args.output or str(ROOT / "output" / f"cv_job_{args.job_id}.md"); path, facts = generate(job, profile, output); store.save_cv(args.job_id, str(path), facts); print(f"Local truthful CV draft created: {path}")
+    except SearchProviderChallengeError:
+        print("Search provider returned a challenge/block instead of search results.")
     except (ValidationError, ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
 
