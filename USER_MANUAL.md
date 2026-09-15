@@ -6,7 +6,7 @@ This is a local-first Python CLI for discovering public job listings, comparing 
 
 Use Python 3.11 or later. From this directory, run `python -m pip install -e .`, then `job-agent validate`; alternatively, run commands directly as `python -m job_agent.cli validate`. The editable factual profile is `data/profile.json`; preferences are separate in `data/search_config.json`. Do not put desired roles or preferences in the profile.
 
-`SOURCE_CV.pdf.pdf` is retained as reference material and its editable path is `master_cv_path` in `data/search_config.json`. The canonical factual source used by the application is `data/profile.json`, which was transcribed from `MASTER_PROFILE.md`. `job-agent validate` confirms whether the configured CV file exists. If the CV and profile conflict, update the source deliberately; this MVP does not silently resolve conflicts. The configured file name differs from the requested `SOURCE_CV.pdf` because that is how the supplied file is named.
+`SOURCE_CV.pdf` is retained as reference material and its editable path is `master_cv_path` in `data/search_config.json`. The canonical factual source used by the application is `data/profile.json`, which was transcribed from `MASTER_PROFILE.md`. `job-agent validate` confirms whether the configured CV file exists. If the CV and profile conflict, update the source deliberately; this MVP does not silently resolve conflicts.
 
 ## Discovering jobs
 
@@ -31,3 +31,4 @@ The user applies manually. Track manual progress with `job-agent application JOB
 The default SQLite database is `data/job_agent.sqlite3`. It contains public job records, decisions, application notes, local CV-version metadata, and audit records. It intentionally contains no passwords and no facility for external personal-data transmission. `job-agent permission-check ACTION DESTINATION DATA --approve` can record a one-time, named approval locally for a future integration, but does not transmit data itself; it always blocks `submit_application`. Delete or move the database yourself if you want a fresh history.
 
 If `validate` fails, correct the reported JSON field. If a search fails, check network access or use `ingest` with saved public job data. Run tests with `python -m unittest discover -s tests`.
+

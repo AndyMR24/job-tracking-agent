@@ -8,5 +8,8 @@ requires-python = ">=3.11"
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["job_agent*"]
+
 [project.scripts]
 job-agent = "job_agent.cli:main"
