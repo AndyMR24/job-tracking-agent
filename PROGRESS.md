@@ -9,7 +9,7 @@ Last verified: 2026-09-15
 - [x] Automated test suite passes: 9 tests.
 - [x] Example JSON ingestion works and stores jobs locally.
 - [x] Job listing, detail view, fit explanation, save, and audit history work.
-- [x] Truthful local Markdown CV generation works.
+- [x] Truthful local LaTeX-generated PDF CV generation works.
 - [x] Manual application status tracking and application listing work.
 - [x] External-data approval check records approval locally without transmitting data.
 - [x] Public search command runs without sending profile or CV data.

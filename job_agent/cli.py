@@ -5,12 +5,15 @@ import json
 from pathlib import Path
 
 from .adzuna import AdzunaError, AdzunaSource
+from .ba import BAError, BASource
 from .cv import generate
 from .evaluator import evaluate
 from .normalizer import normalize
 from .permissions import require_external_approval
 from .profile import ValidationError, load_config, load_profile
 from .storage import Store
+from .himalayas import HimalayasError, HimalayasSource
+from .nomado24 import Nomado24Error, Nomado24Source
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILE = ROOT / "data" / "profile.json"
@@ -31,7 +34,7 @@ def main(argv=None):
     subs = parser.add_subparsers(dest="command", required=True)
     subs.add_parser("validate")
     ingest = subs.add_parser("ingest"); ingest.add_argument("file", help="JSON list of public job records")
-    search = subs.add_parser("search"); search.add_argument("query", nargs="?", help="Public Adzuna query; no personal data is transmitted"); search.add_argument("--location", help="Optional Adzuna location filter")
+    search = subs.add_parser("search"); search.add_argument("query", nargs="?", help="Public search query; no personal data is transmitted"); search.add_argument("--query", dest="query_option", help="Specific public search query"); search.add_argument("--location", help="Optional source location filter"); search.add_argument("--source", choices=("adzuna", "nomado24", "himalayas", "ba"), help="Search only this source")
     listing = subs.add_parser("list"); listing.add_argument("--include-rejected", action="store_true")
     view = subs.add_parser("view"); view.add_argument("job_id", type=int)
     for name in ("save", "reject"):
@@ -50,14 +53,43 @@ def main(argv=None):
             else: print("Profile and configuration are valid.")
             return
         if args.command in {"ingest", "search"}:
+            search_count = new_count = known_count = excluded_count = 0
             if args.command == "ingest": raw_jobs = json.loads(Path(args.file).read_text(encoding="utf-8"))
             else:
-                query = args.query or " ".join(config["search_terms"]); store.audit("search_started")
-                raw_jobs = AdzunaSource(ROOT / ".env").search(query, args.location); store.audit("search_completed", details=f"{len(raw_jobs)} public results")
+                manual_query = args.query_option or args.query
+                source = AdzunaSource(ROOT / ".env"); store.audit("search_started")
+                source_specs = {"adzuna": (source, True), "nomado24": (Nomado24Source(), True), "himalayas": (HimalayasSource(), False), "ba": (BASource(), True)}
+                if manual_query:
+                    search_count = 1
+                    selected, accepts_location = source_specs[args.source or "adzuna"]
+                    raw_jobs = selected.search(manual_query, args.location) if accepts_location else selected.search(manual_query)
+                else:
+                    raw_jobs = []
+                    seen = set()
+                    sources = (source_specs[args.source],) if args.source else tuple(source_specs.values())
+                    for query in config["search_queries"]["primary"] + config["search_queries"]["secondary"]:
+                        for adapter, accepts_location in sources:
+                            search_count += 1
+                            results = adapter.search(query, args.location) if accepts_location else adapter.search(query)
+                            for raw in results:
+                                identity = (raw.get("source"), raw.get("external_job_id"))
+                                if identity[0] and identity[1] and identity in seen:
+                                    continue
+                                if identity[0] and identity[1]:
+                                    seen.add(identity)
+                                raw_jobs.append(raw)
+                store.audit("search_completed", details=f"{len(raw_jobs)} public results")
             if args.command == "search" and not raw_jobs:
                 print("No jobs found.")
             for raw in raw_jobs:
-                raw.setdefault("known_requirement_terms", [s["name"] for s in profile.data["skills"]]); job = normalize(raw); result = evaluate(job, profile, config); job_id, created = store.save_job(job, result.to_dict()); label = "Excluded" if result.excluded else ("New" if created else "Known"); print(f"{label} job {job_id}: {job.title} ({result.score}/100)")
+                raw.setdefault("known_requirement_terms", [s["name"] for s in profile.data["skills"]])
+                job = normalize(raw); result = evaluate(job, profile, config); job_id, created = store.save_job(job, result.to_dict()); label = "Excluded" if result.excluded else ("New" if created else "Known"); print(f"{label} job {job_id}: {job.title} ({result.score}/100)")
+                if args.command == "search":
+                    if created: new_count += 1
+                    else: known_count += 1
+                    if result.excluded: excluded_count += 1
+            if args.command == "search":
+                print(f"Search complete.\nQueries searched: {search_count}\nUnique jobs found: {len(raw_jobs)}\nNew: {new_count}\nKnown: {known_count}\nExcluded: {excluded_count}")
         elif args.command == "list":
             for row in store.list_jobs(args.include_rejected): print(f"{row['id']:>3}  {json.loads(row['evaluation'])['score']:>3}/100  {row['status']:<18} {json.loads(row['payload'])['title']}")
         elif args.command == "view":
@@ -72,8 +104,8 @@ def main(argv=None):
             approval = require_external_approval(action=args.action, destination=args.destination, data_summary=args.data_summary, approved=args.approve)
             store.audit("external_action_approved", details=json.dumps(approval)); print("Specific approval recorded locally. No data was transmitted.")
         elif args.command == "tailor":
-            job, _, _ = store.get_job(args.job_id); output = args.output or str(ROOT / "output" / f"cv_job_{args.job_id}.md"); path, facts = generate(job, profile, output); store.save_cv(args.job_id, str(path), facts); print(f"Local truthful CV draft created: {path}")
-    except AdzunaError as exc:
+            job, _, _ = store.get_job(args.job_id); output = args.output or str(ROOT / "output" / f"cv_job_{args.job_id}.pdf"); path, facts = generate(job, profile, output); store.save_cv(args.job_id, str(path), facts); print(f"Local truthful CV draft created: {path}")
+    except (AdzunaError, Nomado24Error, HimalayasError, BAError) as exc:
         parser.error(str(exc))
     except (ValidationError, ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         parser.error(str(exc))

@@ -51,8 +51,21 @@ def load_profile(path: str | Path) -> Profile:
 
 def load_config(path: str | Path) -> dict:
     data = load_json(path)
-    for field in ("target_roles", "locations", "work_arrangements", "search_terms"):
+    for field in ("target_roles", "locations", "work_arrangements"):
         if field not in data or not isinstance(data[field], list):
             raise ValidationError(f"Configuration needs a list named '{field}'.")
+    queries = data.get("search_queries")
+    if not isinstance(queries, dict):
+        raise ValidationError("Configuration needs a dictionary named 'search_queries'.")
+    for family in ("primary", "secondary"):
+        values = queries.get(family)
+        if not isinstance(values, list) or not all(isinstance(query, str) and query.strip() for query in values):
+            raise ValidationError(f"Configuration search_queries.{family} must be a list of non-empty strings.")
+    preferences = data.get("location_preferences")
+    if not isinstance(preferences, dict) or not isinstance(preferences.get("origin"), str) or not preferences["origin"].strip():
+        raise ValidationError("Configuration needs a non-empty location_preferences.origin.")
+    if not isinstance(preferences.get("max_distance_km"), (int, float)) or isinstance(preferences["max_distance_km"], bool) or preferences["max_distance_km"] <= 0:
+        raise ValidationError("Configuration location_preferences.max_distance_km must be a positive number.")
+    if not isinstance(preferences.get("remote_only_beyond_distance"), bool):
+        raise ValidationError("Configuration location_preferences.remote_only_beyond_distance must be boolean.")
     return data
-

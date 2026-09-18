@@ -78,4 +78,3 @@ class Store:
     def save_cv(self, job_id: int, path: str, facts: list[str]) -> None:
         self._ensure_job_exists(job_id)
         self.connection.execute("INSERT INTO cv_versions(job_id,path,source_facts,created_at) VALUES(?,?,?,?)", (job_id,path,json.dumps(facts),now())); self.connection.commit(); self.audit("cv_generated",job_id)
-

@@ -1,10 +1,17 @@
 {
-  "target_roles": ["Data Scientist", "Data Analyst", "Machine Learning Engineer", "Python Developer", "Software Developer", "AI/ML"],
+  "target_roles": ["Data Scientist", "Data Analyst", "Data Engineer", "Machine Learning Engineer", "Python Developer", "Software Developer", "AI/ML"],
   "locations": ["Aachen", "Cologne", "Köln", "Düsseldorf", "Duesseldorf"],
   "work_arrangements": ["remote", "hybrid", "onsite"],
   "maximum_commute_note": "Roughly up to two hours by train for hybrid or onsite roles; verify individual journeys.",
+  "location_preferences": {"origin": "Aachen", "max_distance_km": 225, "remote_only_beyond_distance": true},
   "master_cv_path": "SOURCE_CV.pdf",
-  "search_terms": ["junior Python developer", "entry level data analyst", "graduate data scientist"]
+  "search_queries": {
+    "primary": [
+      "Data Scientist", "Junior Data Scientist", "Data Analyst", "Junior Data Analyst", "Business Intelligence Analyst", "BI Analyst", "Junior BI Analyst", "Machine Learning Engineer", "Junior Machine Learning Engineer",
+      "Python Developer", "Python Software Developer", "Junior Python Developer", "Software Developer Python", "Junior Software Developer", "Python Backend Developer", "Junior Backend Developer", "Software Engineer Python"
+    ],
+    "secondary": [
+      "Data Consultant", "Junior Data Consultant", "Analytics Consultant", "Junior Analytics Consultant", "Business Intelligence Consultant", "BI Consultant", "Data & Analytics Consultant", "Technology Consultant", "Junior Technology Consultant", "IT Consultant", "Junior IT Consultant"
+    ]
+  }
 }
-
-

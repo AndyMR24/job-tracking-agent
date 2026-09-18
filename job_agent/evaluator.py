@@ -5,6 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 
 from .models import Job
+from .location import LocationStatus, resolve_location
 from .profile import Profile
 
 
@@ -22,6 +23,12 @@ def _matches_target_role(title: str, roles: list[str]) -> bool:
         if target == "software developer" and "software" in normalized and "developer" in normalized:
             return True
     return False
+
+
+def _matches_configured_query(title: str, queries: list[str]) -> bool:
+    """Match a title against an explicitly configured secondary query."""
+    normalized = " ".join(title.lower().replace("/", " ").split())
+    return any(" ".join(query.lower().replace("/", " ").split()) in normalized for query in queries)
 
 
 @dataclass
@@ -47,17 +54,21 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
     excluded = False
     title = job.title.lower()
     roles = [x.lower() for x in config["target_roles"]]
-    if _matches_target_role(title, roles):
+    primary_match = _matches_target_role(title, roles)
+    secondary_match = _matches_configured_query(title, config["search_queries"]["secondary"])
+    if primary_match:
         score += 15; matches.append("Title is related to a configured target role.")
+    elif secondary_match:
+        score += 8; matches.append("Title is related to a configured secondary role.")
     else:
         gaps.append("Title is not clearly among the configured target roles.")
     seniority = job.seniority
     if seniority == "unknown":
-        seniority = next((level for level in ("intern", "trainee", "graduate", "entry", "junior", "associate", "senior", "lead", "principal", "staff") if re.search(rf"\b{re.escape(level)}\b", title)), "unknown")
-    if seniority in {"senior", "lead", "principal", "staff"}:
+        seniority = next((level for level in ("intern", "trainee", "graduate", "entry", "junior", "associate", "senior", "lead", "principal", "staff", "head", "director") if re.search(rf"\b{re.escape(level)}\b", title)), "unknown")
+    if seniority in {"senior", "lead", "principal", "staff", "head", "director"}:
         score -= 45; excluded = True; concerns.append("The posting is explicitly senior-level while the profile has no professional employment experience.")
     elif seniority in {"junior", "graduate", "entry", "trainee", "intern", "associate"}:
-        score += 12; matches.append("Seniority appears compatible with an early-career search.")
+        matches.append("Seniority appears compatible with an early-career search.")
     elif seniority == "unknown":
         unknown.append("Seniority is not stated clearly.")
     for requirement in job.requirements:
@@ -85,14 +96,21 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
     elif not job.requirements:
         score -= 5
         unknown.append("The listing does not expose explicit requirements; technical qualifications could not be fully verified.")
+    geographic = resolve_location(job.location, config["location_preferences"])
+    if geographic.status == LocationStatus.OUTSIDE_RADIUS:
+        if not (job.arrangement == "remote" and config["location_preferences"]["remote_only_beyond_distance"]):
+            excluded = True
+            concerns.append(f"Resolved city {geographic.city} is outside the configured geographic radius.")
+        else:
+            matches.append("Explicitly remote job is allowed beyond the configured geographic radius.")
+    elif geographic.status == LocationStatus.UNKNOWN:
+        unknown.append("Job city could not be resolved for geographic-radius evaluation.")
     if job.arrangement == "remote":
         score += 6; matches.append("Germany-wide remote work is enabled in the configuration.")
     elif job.arrangement in {"hybrid", "onsite"}:
-        if job.location and any(x.lower() in job.location.lower() for x in config["locations"]):
-            score += 4; matches.append("Location is among configured preferences.")
-        elif job.location:
-            score -= 15; concerns.append("Hybrid/onsite location is outside the configured location list; commute needs review.")
-        else:
+        if geographic.status == LocationStatus.WITHIN_RADIUS:
+            score += 4; matches.append("Location is within the configured geographic radius.")
+        elif not job.location:
             unknown.append("Hybrid/onsite posting has no stated location.")
     else:
         unknown.append("Work arrangement is unknown.")
@@ -103,8 +121,3 @@ def evaluate(job: Job, profile: Profile, config: dict) -> Evaluation:
     score = max(0, min(100, score))
     assessment = "rejected" if excluded else "recommended" if score >= 60 else "borderline"
     return Evaluation(score, assessment, excluded, matches, gaps, concerns, unknown)
-
-
-
-
-

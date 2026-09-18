@@ -1,14 +1,17 @@
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from job_agent.cv import generate
+from job_agent.cv import _escape_latex, _select_bullets, generate
 from job_agent.evaluator import evaluate
 from job_agent.models import Job, Requirement
 from job_agent.permissions import PermissionDenied, require_external_approval
 from job_agent.profile import ValidationError, load_config, load_profile
 from job_agent.storage import Store
+from pypdf import PdfReader
 
 
 class AgentTests(unittest.TestCase):
@@ -61,10 +64,73 @@ class AgentTests(unittest.TestCase):
         with self.assertRaises(ValueError): store.update_application(job_id, "saved", None, None)
         store.close()
 
+    @unittest.skipUnless(shutil.which("pdflatex"), "pdflatex is not installed in this test environment")
     def test_cv_uses_profile_facts_without_claiming_employment(self):
-        output = self.root / "draft.md"; generate(Job("Junior Python Developer", requirements=[Requirement("Python", "mandatory")]), self.profile, output)
-        text = output.read_text(encoding="utf-8")
+        output = self.root / "draft.pdf"; generate(Job("Junior Python Developer", requirements=[Requirement("Python", "mandatory")]), self.profile, output)
+        self.assertGreater(output.stat().st_size, 0)
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(str(output)).pages)
         self.assertIn("Python", text); self.assertNotIn("professional employment", text.lower()); self.assertNotIn("React", text)
+
+    @unittest.skipUnless(shutil.which("pdflatex"), "pdflatex is not installed in this test environment")
+    def test_cv_respects_output_path_and_escapes_latex(self):
+        output = self.root / "nested" / "custom.pdf"
+        generate(Job("C++ Developer", requirements=[Requirement("Python")]), self.profile, output)
+        self.assertTrue(output.exists())
+        self.assertEqual(_escape_latex("A&B_50%"), r"A\&B\_50\%")
+
+    def test_missing_pdflatex_is_clear(self):
+        with patch("job_agent.cv.shutil.which", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "pdflatex was not found on PATH"):
+                generate(Job("Role"), self.profile, self.root / "missing.pdf")
+
+    def test_tex_output_contact_thesis_and_missing_contact_fields(self):
+        def fake_compile(command, cwd, **kwargs):
+            self.assertTrue((Path(cwd) / "resume.tex").exists())
+            (Path(cwd) / "resume.pdf").write_bytes(b"fake pdf")
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        output = self.root / "nested" / "cv_job_7.pdf"
+        with patch("job_agent.cv.shutil.which", return_value="pdflatex"), patch("job_agent.cv.subprocess.run", side_effect=fake_compile):
+            generate(Job("Python Developer", requirements=[Requirement("Python")]), self.profile, output)
+        tex_path = output.with_suffix(".tex")
+        tex = tex_path.read_text(encoding="utf-8")
+        self.assertTrue(tex_path.exists())
+        self.assertIn("montoyarojasa@hotmail.com", tex)
+        self.assertIn("+49 151 54934547", tex)
+        self.assertNotIn(r"\href{tel:+49 151 54934547}{+49 151 54934547}", tex)
+        self.assertIn(r"\href{mailto:montoyarojasa@hotmail.com}{montoyarojasa@hotmail.com}", tex)
+        self.assertIn(r"\href{https://github.com/AndyMR24/}{github.com/AndyMR24}", tex)
+        self.assertIn(r"\href{https://www.linkedin.com/in/andres-montoya-rojas/}{www.linkedin.com/in/andres-montoya-rojas}", tex)
+        self.assertIn("Portable and FAIR Query Functions", tex)
+        self.assertEqual(tex.count("Portable and FAIR Query Functions"), 1)
+        self.assertIn("Customer Churn Prediction Project", tex)
+        self.assertGreaterEqual(tex.count("\\item "), 2)
+
+        profile_data = dict(self.profile.data)
+        profile_data["contact"] = {"email": "only@example.test"}
+        profile_path = self.root / "profile-no-social.json"
+        profile_path.write_text(json.dumps(profile_data), encoding="utf-8")
+        profile_without_social = load_profile(profile_path)
+        output_without_social = self.root / "no-social.pdf"
+        with patch("job_agent.cv.shutil.which", return_value="pdflatex"), patch("job_agent.cv.subprocess.run", side_effect=fake_compile):
+            generate(Job("Python Developer"), profile_without_social, output_without_social)
+        tex_without_social = output_without_social.with_suffix(".tex").read_text(encoding="utf-8")
+        self.assertIn("only@example.test", tex_without_social)
+        self.assertNotIn("github.com", tex_without_social)
+        self.assertNotIn("linkedin.com", tex_without_social)
+
+    def test_structured_project_bullets_are_selected_deterministically(self):
+        projects = {item["name"]: item for item in self.profile.data["projects"]}
+        churn = projects["Customer Churn Prediction Project"]
+        self.assertEqual(len(churn["candidate_bullets"]), 6)
+        self.assertEqual(len(churn["general_bullets"]), 3)
+        selected = _select_bullets(churn, {"python"})
+        self.assertEqual(selected, churn["general_bullets"])
+        self.assertLessEqual(len(selected), 3)
+        self.assertEqual(len(selected), len(set(selected)))
+        self.assertIn("technical_practice", self.profile.data)
+        self.assertIn("Python", self.profile.data["technical_practice"])
+        self.assertNotIn("technical_practice", self.profile.data.get("rendered_sections", {}))
 
     def test_external_data_needs_specific_approval_and_application_is_blocked(self):
         with self.assertRaises(PermissionDenied): require_external_approval(action="send_cv", destination="Example GmbH", data_summary="CV", approved=False)
